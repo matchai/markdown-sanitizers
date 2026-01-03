@@ -5,6 +5,7 @@ import remarkRehype from "remark-rehype";
 import rehypeStringify from "rehype-stringify";
 import type { Root as HastRoot, Element, Text } from "hast";
 import { harden } from "../index.js";
+import rehypeRaw from "rehype-raw";
 
 // Helper function to process markdown through our plugin
 async function processMarkdown(
@@ -1711,5 +1712,42 @@ describe("Blob URL support", () => {
     const link = findElement(tree, "a");
     expect(link).not.toBeNull();
     expect(link!.properties.href).toBe(blobUrl);
+  });
+});
+
+function processRawMarkdown(markdown: string) {
+  return unified()
+    .use(remarkParse)
+    .use(remarkRehype, { allowDangerousHtml: true })
+    .use(rehypeRaw)
+    .use(harden, { defaultOrigin: "https://example.com" })
+    .use(rehypeStringify)
+    .process(markdown);
+}
+
+describe("rendering raw markdown", () => {
+  it("should sanitize iframe elements", async () => {
+    const markdown = `<iframe src="https://evil.com/malicious"></iframe>`;
+    const result = await processRawMarkdown(markdown);
+    expect(String(result)).not.toContain("<iframe");
+  });
+
+  it("should sanitize iframe srcdoc attribute", async () => {
+    const markdown = `<iframe srcdoc="<script>alert('xss')</script>"></iframe>`;
+    const result = await processRawMarkdown(markdown);
+    expect(String(result)).not.toContain("srcdoc");
+    expect(String(result)).not.toContain("<script>");
+  });
+
+  it("should sanitize script tags", async () => {
+    const markdown = `<script>alert('xss')</script>`;
+    const result = await processRawMarkdown(markdown);
+    expect(String(result)).not.toContain("<script>");
+  });
+
+  it("should still sanitize javascript: links", async () => {
+    const markdown = `<a href="javascript:alert('xss')">click me</a>`;
+    const result = await processRawMarkdown(markdown);
+    expect(String(result)).not.toContain('href="javascript:');
   });
 });
